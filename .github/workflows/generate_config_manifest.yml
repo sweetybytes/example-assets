@@ -1,0 +1,38 @@
+name: Generate Config Manifest
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'config/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate manifest
+        run: |
+          # Create an empty manifest file
+          echo '{"files":{}}' > config_manifest.json
+          # Find all files in the config folder, calculate their checksums, and add to the manifest
+          find config -type f -print0 | while IFS= read -r -d '' file; do
+            key="$file"
+            checksum=$(sha256sum "$file" | awk '{ print $1 }')
+            # Use jq to safely add the entry to the JSON file
+            jq --arg key "$key" --arg checksum "$checksum" '.files[$key] = $checksum' config_manifest.json > tmp.$$.json && mv tmp.$$.json config_manifest.json
+          done
+
+      - name: Commit and push manifest
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add config_manifest.json
+          # Commit only if there are actual changes to the manifest
+          git diff --staged --quiet || git commit -m "Automated: Update config_manifest.json"
+          git push
